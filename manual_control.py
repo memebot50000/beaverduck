@@ -7,11 +7,36 @@ import threading
 import os
 import subprocess
 
-def get_gpio_info():
+def check_uart_config():
     try:
-        return subprocess.check_output(['gpio', 'readall']).decode('utf-8')
-    except:
-        return "GPIO info not available (gpio command not found)"
+        config = subprocess.check_output(['vcgencmd', 'get_config', 'uart0']).decode('utf-8')
+        print("UART Configuration:")
+        print(config)
+    except Exception as e:
+        print(f"Error checking UART configuration: {e}")
+
+def check_gpio_config():
+    try:
+        with open('/sys/kernel/debug/pinctrl/3f200000.gpio/pins') as f:
+            pins = f.read()
+        print("GPIO Pin Configuration:")
+        print(pins)
+    except Exception as e:
+        print(f"Error checking GPIO configuration: {e}")
+
+def uart_loopback_test():
+    try:
+        ser = serial.Serial('/dev/ttyAMA0', 115200, timeout=1)
+        test_data = b'Hello, UART!'
+        ser.write(test_data)
+        time.sleep(0.1)
+        received = ser.read(len(test_data))
+        if received == test_data:
+            print("UART Loopback Test Passed!")
+        else:
+            print(f"UART Loopback Test Failed. Sent: {test_data}, Received: {received}")
+    except Exception as e:
+        print(f"Error during UART loopback test: {e}")
 
 class SpektrumReceiver:
     def __init__(self, port='/dev/ttyAMA0'):
@@ -50,20 +75,21 @@ class SpektrumReceiver:
                 if self.ser.in_waiting > 0:
                     data = self.ser.read(self.ser.in_waiting)  # Read all available bytes
                     print(f"Raw data ({len(data)} bytes): {data.hex()}")
+                    print(f"ASCII representation: {data}")
                     if len(data) >= 16 and data[0] == 0x0F and data[1] == 0xA2:
-                        for i in range(4):  # Only read 4 channels
+                        for i in range(4):
                             ch = (data[2*i+3] << 8) | data[2*i+2]
                             self.channels[i] = ch & 0x07FF
                         print(f"Channel values: {self.channels}")
                     else:
-                        print(f"Received data, but not in expected format. First two bytes: {data[:2].hex()}")
+                        print(f"Received data, but not in expected format. All bytes: {[hex(b) for b in data]}")
                 else:
                     print("Waiting for data...")
             except serial.SerialException as e:
                 print(f"Serial error: {e}")
                 self.ser = None
 
-            time.sleep(0.1)  # Reduced rate for debugging
+            time.sleep(0.1)
 
 class SpeedybeeComm:
     def __init__(self):
