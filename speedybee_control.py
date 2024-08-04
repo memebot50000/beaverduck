@@ -2,31 +2,46 @@ import serial
 import struct
 import time
 
+# MSP command codes
 MSP_SET_RAW_RC = 200
 
-def msp_encode(cmd, data):
-    size = len(data)
-    total = 0
+def create_msp_command(cmd, data=[]):
+    length = len(data)
+    checksum = length ^ cmd
     for byte in data:
-        total ^= byte
-    frame = [ord('$'), ord('M'), ord('<'), size, cmd]
-    frame.extend(data)
-    frame.append(total & 0xFF)
-    return bytes(frame)
+        checksum ^= byte
+    return bytearray([ord('$'), ord('M'), ord('<'), length, cmd] + data + [checksum])
 
 class BetaflightFC:
     def __init__(self, port='/dev/ttyACM0', baudrate=115200):
         self.ser = serial.Serial(port, baudrate, timeout=1)
         print(f"Connected to Betaflight FC on {port}")
 
+    def send_msp_command(self, cmd, data=[]):
+        if self.ser is None:
+            print("No serial connection to FC")
+            return
+
+        command = create_msp_command(cmd, data)
+        try:
+            self.ser.write(command)
+            print(f"Sent MSP command to FC: {command.hex()}")
+
+            # Try to read a response
+            response = self.ser.read(1024)
+            if response:
+                print(f"Received response from FC: {response.hex()}")
+            else:
+                print("No response from FC")
+        except serial.SerialException as e:
+            print(f"Error communicating with FC: {e}")
+            self.ser = None
+
     def send_rc_data(self, channels):
         data = []
         for ch in channels:
-            data.append(ch & 0xFF)
-            data.append((ch >> 8) & 0xFF)
-        packet = msp_encode(MSP_SET_RAW_RC, data)
-        self.ser.write(packet)
-        print(f"Sent RC data: {channels}")
+            data += [ch & 0xFF, (ch >> 8) & 0xFF]
+        self.send_msp_command(MSP_SET_RAW_RC, data)
 
     def arm_motors(self):
         print("Arming motors...")
