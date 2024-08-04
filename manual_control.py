@@ -6,6 +6,7 @@ import glob
 import threading
 import os
 import subprocess
+import RPi.GPIO as GPIO
 
 def check_uart_config():
     try:
@@ -17,17 +18,17 @@ def check_uart_config():
 
 def check_gpio_config():
     try:
-        with open('/sys/kernel/debug/pinctrl/3f200000.gpio/pins') as f:
-            pins = f.read()
-        print("GPIO Pin Configuration:")
-        print(pins)
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(15, GPIO.IN)  # Set up GPIO 15 as input
+        state = GPIO.input(15)
+        print(f"GPIO 15 state: {'HIGH' if state else 'LOW'}")
     except Exception as e:
         print(f"Error checking GPIO configuration: {e}")
 
 class SpektrumReceiver:
     def __init__(self, port='/dev/ttyAMA0'):
         self.port = port
-        self.baudrates = [115200, 115000, 100000, 125000, 9600]  # Added 9600 for testing
+        self.baudrates = [115200, 115000, 100000, 125000, 9600]
         self.ser = None
         self.channels = [0, 0, 0, 0]
 
@@ -49,6 +50,7 @@ class SpektrumReceiver:
         return False
 
     def read_spektrum(self):
+        zero_count = 0
         while True:
             if self.ser is None or not self.ser.is_open:
                 print("Serial port not open. Attempting to open...")
@@ -59,9 +61,20 @@ class SpektrumReceiver:
 
             try:
                 if self.ser.in_waiting > 0:
-                    data = self.ser.read(self.ser.in_waiting)  # Read all available bytes
+                    data = self.ser.read(self.ser.in_waiting)
                     print(f"Raw data ({len(data)} bytes): {data.hex()}")
                     print(f"ASCII representation: {data}")
+                    if all(b == 0 for b in data):
+                        zero_count += 1
+                        if zero_count > 10:
+                            print("Received too many zero packets. Resetting serial connection...")
+                            self.ser.close()
+                            self.ser = None
+                            zero_count = 0
+                            continue
+                    else:
+                        zero_count = 0
+
                     if len(data) >= 16 and data[0] == 0x0F and data[1] == 0xA2:
                         for i in range(4):
                             ch = (data[2*i+3] << 8) | data[2*i+2]
@@ -137,7 +150,6 @@ class SpeedybeeComm:
                 self.ser.close()
 
 if __name__ == '__main__':
-    # Print system information
     print("System Information:")
     print(f"Python version: {os.sys.version}")
     print(f"Operating system: {os.name}")
@@ -153,13 +165,11 @@ if __name__ == '__main__':
     print("\nUART Configuration:")
     check_uart_config()
     
-    # Check if ttyAMA0 exists
     if os.path.exists('/dev/ttyAMA0'):
         print("\nttyAMA0 exists")
     else:
         print("\nttyAMA0 does not exist")
     
-    # List all tty devices
     tty_devices = glob.glob('/dev/tty*')
     print("\nAvailable tty devices:")
     for device in tty_devices:
@@ -169,15 +179,13 @@ if __name__ == '__main__':
     speedybee_comm = SpeedybeeComm()
 
     print("\nStarting Spektrum receiver and Speedybee communication...")
-    # Run SpektrumReceiver in a separate thread
     receiver_thread = threading.Thread(target=spektrum_receiver.read_spektrum)
     receiver_thread.start()
 
-    # Run SpeedybeeComm in the main thread
     try:
         speedybee_comm.run(spektrum_receiver)
     except KeyboardInterrupt:
         print("\nScript terminated by user.")
     finally:
         print("Cleaning up...")
-        # You might want to add any necessary cleanup code here
+        GPIO.cleanup()
