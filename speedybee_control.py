@@ -2,15 +2,16 @@ import serial
 import struct
 import time
 
-# MSP constants
 MSP_SET_RAW_RC = 200
 
 def msp_encode(cmd, data):
     size = len(data)
-    total = sum(data)
-    frame = ['$'.encode('ascii'), 'M'.encode('ascii'), '<'.encode('ascii'), size, cmd]
-    frame += data
-    frame += [total & 0xFF]
+    total = 0
+    for byte in data:
+        total ^= byte
+    frame = [ord('$'), ord('M'), ord('<'), size, cmd]
+    frame.extend(data)
+    frame.append(total & 0xFF)
     return bytes(frame)
 
 class BetaflightFC:
@@ -19,8 +20,11 @@ class BetaflightFC:
         print(f"Connected to Betaflight FC on {port}")
 
     def send_rc_data(self, channels):
-        data = struct.pack('<HHHHHHHH', *channels)
-        packet = msp_encode(MSP_SET_RAW_RC, list(data))
+        data = []
+        for ch in channels:
+            data.append(ch & 0xFF)
+            data.append((ch >> 8) & 0xFF)
+        packet = msp_encode(MSP_SET_RAW_RC, data)
         self.ser.write(packet)
         print(f"Sent RC data: {channels}")
 
