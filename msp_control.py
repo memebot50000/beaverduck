@@ -3,29 +3,10 @@
 import serial
 import time
 import glob
+import threading
 
 # MSP command codes
-MSP_IDENT = 100
-MSP_STATUS = 101
-MSP_RAW_IMU = 102
-MSP_SERVO = 103
-MSP_MOTOR = 104
-MSP_RC = 105
-MSP_RAW_GPS = 106
-MSP_COMP_GPS = 107
-MSP_ATTITUDE = 108
-MSP_ALTITUDE = 109
-MSP_ANALOG = 110
-MSP_RC_TUNING = 111
-MSP_PID = 112
-MSP_BOX = 113
-MSP_MISC = 114
-MSP_MOTOR_PINS = 115
-MSP_BOXNAMES = 116
-MSP_PIDNAMES = 117
-MSP_WP = 118
-MSP_BOXIDS = 119
-MSP_SERVO_CONF = 120
+MSP_SET_RAW_RC = 200
 
 # Helper function to create an MSP command
 def create_msp_command(cmd, data=[]):
@@ -71,35 +52,53 @@ class SpeedybeeComm:
             print(f"Error communicating with FC: {e}")
             self.ser = None
 
+    def send_rc_data(self, channels):
+        data = []
+        for ch in channels:
+            data += [ch & 0xFF, (ch >> 8) & 0xFF]
+        self.send_msp_command(MSP_SET_RAW_RC, data)
+
 def manual_control(speedybee_comm):
-    print("Manual control mode. Enter commands:")
-    print("1: MSP_IDENT, 2: MSP_STATUS, 3: MSP_RAW_IMU, 4: MSP_SERVO")
-    print("5: MSP_MOTOR, 6: MSP_RC, 7: MSP_ATTITUDE, 8: MSP_ALTITUDE")
+    print("Manual control mode. Use the following keys:")
+    print("w/s: Increase/decrease throttle")
+    print("a/d: Yaw left/right")
+    print("i/k: Pitch forward/backward")
+    print("j/l: Roll left/right")
     print("q: Quit manual control")
 
-    while True:
-        command = input("Enter command: ").strip()
-        if command == '1':
-            speedybee_comm.send_msp_command(MSP_IDENT)
-        elif command == '2':
-            speedybee_comm.send_msp_command(MSP_STATUS)
-        elif command == '3':
-            speedybee_comm.send_msp_command(MSP_RAW_IMU)
-        elif command == '4':
-            speedybee_comm.send_msp_command(MSP_SERVO)
-        elif command == '5':
-            speedybee_comm.send_msp_command(MSP_MOTOR)
-        elif command == '6':
-            speedybee_comm.send_msp_command(MSP_RC)
-        elif command == '7':
-            speedybee_comm.send_msp_command(MSP_ATTITUDE)
-        elif command == '8':
-            speedybee_comm.send_msp_command(MSP_ALTITUDE)
-        elif command == 'q':
-            print("Exiting manual control")
-            break
-        else:
-            print("Invalid command")
+    channels = [1500, 1500, 1500, 1500]  # [Roll, Pitch, Throttle, Yaw]
+
+    def update_channels():
+        while True:
+            command = input("Enter command: ").strip().lower()
+            if command == 'w':
+                channels[2] = min(2000, channels[2] + 10)  # Increase throttle
+            elif command == 's':
+                channels[2] = max(1000, channels[2] - 10)  # Decrease throttle
+            elif command == 'a':
+                channels[3] = max(1000, channels[3] - 10)  # Yaw left
+            elif command == 'd':
+                channels[3] = min(2000, channels[3] + 10)  # Yaw right
+            elif command == 'i':
+                channels[1] = min(2000, channels[1] + 10)  # Pitch forward
+            elif command == 'k':
+                channels[1] = max(1000, channels[1] - 10)  # Pitch backward
+            elif command == 'j':
+                channels[0] = max(1000, channels[0] - 10)  # Roll left
+            elif command == 'l':
+                channels[0] = min(2000, channels[0] + 10)  # Roll right
+            elif command == 'q':
+                print("Exiting manual control")
+                break
+            else:
+                print("Invalid command")
+
+            speedybee_comm.send_rc_data(channels)
+            time.sleep(0.05)  # 20Hz update rate
+
+    control_thread = threading.Thread(target=update_channels)
+    control_thread.start()
+    control_thread.join()
 
 if __name__ == '__main__':
     speedybee_comm = SpeedybeeComm()
