@@ -4,34 +4,39 @@ import serial
 import time
 import glob
 import threading
+import os
 
 class SpektrumReceiver:
-    def __init__(self, port='/dev/ttyAMA0', baudrate=115200):
+    def __init__(self, port='/dev/ttyAMA0', baudrate=115000):  # Try 115000 first
+        self.port = port
+        self.baudrate = baudrate
+        self.ser = None
+        self.channels = [0, 0, 0, 0]
+
+    def open_serial(self):
         try:
-            self.ser = serial.Serial(port, baudrate, timeout=1)
-            print(f"Successfully opened serial port {port}")
+            self.ser = serial.Serial(self.port, self.baudrate, timeout=1)
+            print(f"Successfully opened serial port {self.port} at {self.baudrate} baud")
+            return True
         except serial.SerialException as e:
             print(f"Failed to open serial port: {e}")
-            self.ser = None
-        self.channels = [0, 0, 0, 0]
+            return False
 
     def read_spektrum(self):
         while True:
-            if self.ser is None:
-                print("Serial port not open. Retrying in 5 seconds...")
-                time.sleep(5)
-                try:
-                    self.ser = serial.Serial('/dev/ttyAMA0', 115200, timeout=1)
-                    print("Successfully opened serial port /dev/ttyAMA0")
-                except serial.SerialException as e:
-                    print(f"Failed to open serial port: {e}")
-                continue
+            if self.ser is None or not self.ser.is_open:
+                print("Serial port not open. Attempting to open...")
+                if not self.open_serial():
+                    print("Failed to open serial port. Retrying in 5 seconds...")
+                    time.sleep(5)
+                    continue
 
             try:
-                if self.ser.in_waiting >= 16:
-                    data = self.ser.read(16)
+                if self.ser.in_waiting > 0:
+                    print(f"Bytes available: {self.ser.in_waiting}")
+                    data = self.ser.read(self.ser.in_waiting)
                     print(f"Raw data: {data.hex()}")
-                    if data[0] == 0x0F and data[1] == 0xA2:
+                    if len(data) >= 16 and data[0] == 0x0F and data[1] == 0xA2:
                         for i in range(4):  # Only read 4 channels
                             ch = (data[2*i+3] << 8) | data[2*i+2]
                             self.channels[i] = ch & 0x07FF
@@ -106,6 +111,25 @@ class SpeedybeeComm:
                 self.ser.close()
 
 if __name__ == '__main__':
+    # Print system information
+    print("System Information:")
+    print(f"Python version: {os.sys.version}")
+    print(f"Operating system: {os.name}")
+    print(f"Platform: {os.sys.platform}")
+    
+    # Check if ttyAMA0 exists
+    if os.path.exists('/dev/ttyAMA0'):
+        print("ttyAMA0 exists")
+    else:
+        print("ttyAMA0 does not exist")
+    
+    # Try to open ttyAMA0
+    try:
+        with serial.Serial('/dev/ttyAMA0', 115000, timeout=1) as ser:
+            print("Successfully opened ttyAMA0")
+    except Exception as e:
+        print(f"Failed to open ttyAMA0: {e}")
+
     spektrum_receiver = SpektrumReceiver()
     speedybee_comm = SpeedybeeComm()
 
