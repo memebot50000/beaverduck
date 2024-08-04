@@ -31,17 +31,24 @@ class SpeedybeeComm:
         formatted_data += bytearray([0x00, 0x00])  # End bytes
         try:
             self.ser.write(formatted_data)
-            print(f"Sent data to FC: {channels}")
+            print(f"Sent data to FC: {formatted_data.hex()}")
+            
+            # Try to read a response
+            response = self.ser.read(100)
+            if response:
+                print(f"Received response from FC: {response.hex()}")
+            else:
+                print("No response from FC")
         except serial.SerialException as e:
-            print(f"Error sending data to FC: {e}")
+            print(f"Error communicating with FC: {e}")
             self.ser = None
 
 def manual_control(speedybee_comm):
-    print("Manual control mode. Use the following keys:")
-    print("w/s: Throttle up/down")
-    print("a/d: Yaw left/right")
-    print("i/k: Pitch forward/backward")
-    print("j/l: Roll left/right")
+    print("Manual control mode. Enter commands:")
+    print("w: Increase throttle, s: Decrease throttle")
+    print("a: Yaw left, d: Yaw right")
+    print("i: Pitch forward, k: Pitch backward")
+    print("j: Roll left, l: Roll right")
     print("q: Quit manual control")
 
     channels = [1500, 1500, 1500, 1500]  # [Roll, Pitch, Throttle, Yaw]
